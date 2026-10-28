@@ -5,3 +5,12 @@
 	path = ros2_ws/src/elevation_mapping_cupy
 	url = https://github.com/leggedrobotics/elevation_mapping_cupy.git
 	branch = ros2
+[submodule "ros2_ws/src/livox_ros_driver2"]
+	path = ros2_ws/src/livox_ros_driver2
+	url = https://github.com/Livox-SDK/livox_ros_driver2.git
+[submodule "ros2_ws/src/Livox-SDK2"]
+	path = ros2_ws/src/Livox-SDK2
+	url = https://github.com/Livox-SDK/Livox-SDK2.git
+[submodule "ros2_ws/src/Sophus"]
+	path = ros2_ws/src/Sophus
+	url = https://github.com/strasdat/Sophus.git
