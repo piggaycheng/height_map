@@ -19,6 +19,13 @@ def generate_launch_description():
                 PythonLaunchDescriptionSource(os.path.join(adapter_share, "launch", "fastlio.launch.py"))
             ),
             Node(
+                package="isaac_fastlio_adapter",
+                executable="grid_map_to_points.py",
+                name="grid_map_to_points",
+                output="screen",
+                parameters=[{"use_sim_time": True}],
+            ),
+            Node(
                 package="elevation_mapping_cupy",
                 executable="elevation_mapping_node.py",
                 name="elevation_mapping_node",

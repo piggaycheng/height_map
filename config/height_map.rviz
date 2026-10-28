@@ -11,8 +11,8 @@ Visualization Manager:
       Cell Size: 1
       Plane Cell Count: 40
     - Class: grid_map_rviz_plugin/GridMap
-      Name: ElevationMap
-      Enabled: true
+      Name: ElevationMap (surface)
+      Enabled: false
       Topic:
         Value: /elevation_mapping_node/elevation_map_filter
         Depth: 5
@@ -26,11 +26,26 @@ Visualization Manager:
       Color Layer: elevation
       Autocompute Intensity Bounds: true
       Use Rainbow: true
-      Show Grid Lines: false
+      Show Grid Lines: true
       History Length: 1
     - Class: rviz_default_plugins/PointCloud2
-      Name: LIO Cloud (map)
+      Name: ElevationMap (points)
       Enabled: true
+      Topic:
+        Value: /elevation_points
+        Depth: 1
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+      Style: Points
+      Size (Pixels): 4
+      Color Transformer: Axis Color
+      Axis: Z
+      Use Rainbow: true
+      Autocompute Value Bounds: true
+    - Class: rviz_default_plugins/PointCloud2
+      Name: LIO Cloud (map)
+      Enabled: false
       Topic:
         Value: /fastlio2/world_cloud
         Depth: 1
