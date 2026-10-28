@@ -4,3 +4,4 @@
 [submodule "ros2_ws/src/elevation_mapping_cupy"]
 	path = ros2_ws/src/elevation_mapping_cupy
 	url = https://github.com/leggedrobotics/elevation_mapping_cupy.git
+	branch = ros2
