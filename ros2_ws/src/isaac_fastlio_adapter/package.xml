@@ -12,6 +12,7 @@
   <depend>rclcpp</depend>
   <depend>sensor_msgs</depend>
 
+  <exec_depend>elevation_mapping_cupy</exec_depend>
   <exec_depend>fastlio2</exec_depend>
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>

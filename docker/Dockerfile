@@ -58,8 +58,9 @@ RUN curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key \
 RUN python3 -m pip install --no-cache-dir --break-system-packages \
       --index-url https://download.pytorch.org/whl/cu126 torch torchvision \
     && python3 -m pip install --no-cache-dir --break-system-packages \
-      --no-deps cupy-cuda12x fastrlock ros2-numpy \
-    && python3 -m pip install --no-cache-dir --break-system-packages simple-parsing
+      --no-deps "cupy-cuda12x==13.6.0" fastrlock ros2-numpy \
+    && python3 -m pip install --no-cache-dir --break-system-packages simple-parsing \
+    && python3 -m pip install --no-cache-dir --break-system-packages --no-deps transformations pybase64
 
 COPY ros2_ws/src/Livox-SDK2 /tmp/Livox-SDK2
 RUN cmake -S /tmp/Livox-SDK2 -B /tmp/livox-build -DCMAKE_BUILD_TYPE=Release \
