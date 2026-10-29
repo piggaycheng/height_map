@@ -90,7 +90,8 @@ parser.add_argument("--demo", action="store_true", help="Loop the scripted comma
 parser.add_argument("--device", choices=["cpu", "cuda"], default="cuda", help="Simulation device.")
 parser.add_argument("--command", type=float, nargs=3, metavar=("VX", "VY", "WZ"), help="Constant command instead of keyboard/script.")
 parser.add_argument("--no-lidar", action="store_true", help="With --external: do not mount the LiDAR/IMU (flat policy, no height map).")
-parser.add_argument("--lidar-offset", type=float, nargs=3, default=[0.2, 0.0, 0.45], metavar=("X", "Y", "Z"), help="LiDAR position in base_link (m).")
+parser.add_argument("--lidar-offset", type=float, nargs=3, default=[0.2, 0.0, 0.15], metavar=("X", "Y", "Z"), help="LiDAR position in base_link (m).")
+parser.add_argument("--lidar-near-range", type=float, default=1.0, help="LiDAR drops returns closer than this (m); removes hits on the robot body.")
 parser.add_argument("--lidar-pitch", type=float, default=0.0, help="LiDAR pitch about its Y axis in degrees (positive = nose down).")
 parser.add_argument("--lidar-topic", default="/isaac/lidar_points")
 parser.add_argument("--imu-topic", default="/isaac/imu")
@@ -320,7 +321,7 @@ def mount_height_map_sensors():
     import usdrt
     from isaacsim.sensors.experimental.physics import IMU
     from isaacsim.sensors.experimental.rtx import Lidar, LidarSensor
-    from pxr import Gf, Usd, UsdGeom
+    from pxr import Gf, Sdf, Usd, UsdGeom
 
     app_utils.enable_extension("isaacsim.ros2.bridge")
     simulation_app.update()
@@ -335,6 +336,11 @@ def mount_height_map_sensors():
     root.AddTransformOp().Set(mount_local)
 
     lidar_path = str(lidar.paths[0])
+    lidar_prim = stage.GetPrimAtPath(lidar_path)
+    lidar_prim.CreateAttribute("omni:sensor:Core:nearRangeM", Sdf.ValueTypeNames.Float).Set(float(args.lidar_near_range))
+    for prim in Usd.PrimRange(stage.GetPrimAtPath(LIDAR_ROOT_PATH)):
+        if prim.IsA(UsdGeom.Mesh):
+            UsdGeom.Imageable(prim).MakeInvisible()
     lidar_sensor = LidarSensor(lidar, annotators=[])
     lidar_sensor.attach_writer(
         "RtxLidarROS2PublishPointCloud",
