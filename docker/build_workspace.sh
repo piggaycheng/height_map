@@ -37,7 +37,7 @@ rm -rf "$workspace_dir/build/livox_ros_driver2" "$workspace_dir/build/interface"
 
 cd "$workspace_dir"
 colcon build \
-  --packages-up-to fastlio2 isaac_fastlio_adapter elevation_mapping_cupy \
+  --packages-up-to fastlio2 isaac_fastlio_adapter elevation_mapping_cupy m20_policy_node \
   "$@" \
   --cmake-args \
   -DROS_EDITION=ROS2 \

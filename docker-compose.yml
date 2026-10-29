@@ -31,5 +31,6 @@ services:
       NVIDIA_DRIVER_CAPABILITIES: all
     volumes:
       - .:/workspace
+      - ${POLICY_DIR:-/tmp}:/policies:ro
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       - ${XAUTHORITY:-/dev/null}:/tmp/.Xauthority:ro
