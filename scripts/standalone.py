@@ -1,4 +1,4 @@
-#!/home/yu/isaacsim-6.2.0/python.sh
+#!/home/user/isaacsim-6.2.0/python.sh
 """Isaac Sim 6.2 standalone: Office + Nova Carter (RTX LiDAR + IMU) for FAST-LIO2 and elevation_mapping_cupy.
 
 Published ROS 2 topics (root namespace):
@@ -24,6 +24,9 @@ CHASSIS_PATH = f"{CARTER_PRIM_PATH}/chassis_link"
 LIDAR_PATH = f"{CHASSIS_PATH}/sensors/XT_32/PandarXT_32_10hz"
 IMU_PATH = f"{LIDAR_PATH}/fastlio_imu"
 SURROUNDING_BUILDINGS_PRIM_PATH = "/Root/SM_Buildings"
+USE_PHYSICS_PLANE = True  # False: replace the invisible plane with stair/floor mesh colliders
+GROUND_COLLISION_PLANE_PATH = "/Root/GroundPlane/CollisionPlane"
+WALKABLE_NAME_KEYWORDS = ("stair", "floor")
 WHEEL_JOINTS = ["joint_wheel_left", "joint_wheel_right"]
 WHEEL_RADIUS = 0.14
 WHEEL_BASE = 0.4132
@@ -77,7 +80,7 @@ from isaacsim.sensors.experimental.physics import IMU
 from isaacsim.sensors.experimental.rtx import Lidar, LidarSensor
 from isaacsim.storage.native import get_assets_root_path, is_file
 from omni.kit.viewport.utility import get_active_viewport
-from pxr import Gf, Usd, UsdGeom
+from pxr import Gf, Usd, UsdGeom, UsdPhysics
 
 app_utils.enable_extension("isaacsim.ros2.bridge")
 simulation_app.update()
@@ -252,6 +255,35 @@ def spawn_robot(stage, assets_root_path: str):
 
 exit_code = 0
 input_interface = keyboard = keyboard_subscription = None
+
+
+def enable_stair_collision(stage) -> None:
+    """Replace the invisible ground plane with real colliders: exact meshes for stairs, convex hulls for floors."""
+    plane = stage.GetPrimAtPath(GROUND_COLLISION_PLANE_PATH)
+    if plane.IsValid():
+        UsdPhysics.CollisionAPI(plane).GetCollisionEnabledAttr().Set(False)
+        print(f"Disabled ground collision plane: {GROUND_COLLISION_PLANE_PATH}")
+
+    roots = [
+        p for p in stage.GetPseudoRoot().GetChild("Root").GetChildren()
+        if any(k in p.GetName().lower() for k in WALKABLE_NAME_KEYWORDS)
+    ]
+    count = 0
+    for root in roots:
+        # Instance proxies cannot author collision APIs, so make the subtree local first.
+        for prim in Usd.PrimRange(root):
+            if prim.IsInstance():
+                prim.SetInstanceable(False)
+        for prim in Usd.PrimRange(root):
+            if prim.IsA(UsdGeom.Mesh):
+                UsdPhysics.CollisionAPI.Apply(prim).CreateCollisionEnabledAttr(True)
+                # Flat floors need a convex hull: wheels get no traction on zero-thickness triangle meshes.
+                approximation = "convexHull" if "floor" in root.GetName().lower() else "none"
+                UsdPhysics.MeshCollisionAPI.Apply(prim).CreateApproximationAttr(approximation)
+                count += 1
+    print(f"Enabled mesh colliders on {count} meshes under {len(roots)} walkable prims")
+
+
 try:
     assets_root_path = get_assets_root_path()
     if assets_root_path is None:
@@ -271,8 +303,14 @@ try:
     if buildings_prim.IsValid():
         UsdGeom.Imageable(buildings_prim).MakeInvisible()
 
+    if not USE_PHYSICS_PLANE:
+        enable_stair_collision(stage)
+
     robot, controller, lidar_sensor = spawn_robot(stage, assets_root_path)
     create_ros2_publishers(stage)
+    simulation_app.update()
+    while is_stage_loading():
+        simulation_app.update()
 
     def drive(linear: float, angular: float) -> None:
         robot.apply_wheel_actions(controller.forward(command=[linear, angular]))
