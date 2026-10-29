@@ -54,6 +54,10 @@ parser.add_argument("--lidar-topic", default="/isaac/lidar_points")
 parser.add_argument("--imu-topic", default="/isaac/imu")
 parser.add_argument("--lidar-frame", default="lidar_link")
 parser.add_argument("--imu-frame", default="imu_link")
+parser.add_argument(
+    "--lidar-pitch", type=float, default=0.0,
+    help="Extra LiDAR pitch about its own Y axis in degrees (positive = nose down). The IMU is a child prim and tilts with it.",
+)
 parser.add_argument("--base-frame", default="base_link", help="Robot frame used by elevation_mapping_cupy.")
 parser.add_argument("--body-frame", default="body", help="FAST-LIO body_frame; must equal lio.yaml body_frame.")
 parser.add_argument(
@@ -145,6 +149,16 @@ def sensor_mount(stage) -> Gf.Matrix4d:
     return lidar_world * chassis_world.GetInverse()
 
 
+def tilt_lidar(stage, pitch_deg: float) -> None:
+    """Rotate the LiDAR about its own origin; sensor_mount() then publishes the tilted TF and the child IMU follows."""
+    xformable = UsdGeom.Xformable(stage.GetPrimAtPath(LIDAR_PATH))
+    local = xformable.GetLocalTransformation(Usd.TimeCode.Default())
+    tilt = Gf.Matrix4d().SetRotate(Gf.Rotation(Gf.Vec3d.YAxis(), pitch_deg))
+    xformable.ClearXformOpOrder()
+    xformable.AddTransformOp().Set(tilt * local)
+    print(f"LiDAR tilted {pitch_deg:.1f} deg about its Y axis (positive = nose down)")
+
+
 def create_ros2_publishers(stage) -> None:
     keys = og.Controller.Keys
     mount = sensor_mount(stage)
@@ -225,6 +239,8 @@ def spawn_robot(stage, assets_root_path: str):
 
     if not stage.GetPrimAtPath(LIDAR_PATH).IsValid():
         raise RuntimeError(f"LiDAR prim was not found: {LIDAR_PATH}")
+    if args.lidar_pitch:
+        tilt_lidar(stage, args.lidar_pitch)
     lidar = Lidar(
         LIDAR_PATH,
         accumulate_outputs=None,

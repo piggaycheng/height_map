@@ -19,3 +19,8 @@
         layers: ['min_filter', 'smooth', 'inpaint', 'elevation']
         basic_layers: ['min_filter']
         fps: 3.0
+
+    # Stair descent: keep cells observed from afar after they enter the lidar
+    # blind zone. Ray-tracing / overlap clearing would erase them.
+    enable_visibility_cleanup: false
+    enable_overlap_clearance: false
