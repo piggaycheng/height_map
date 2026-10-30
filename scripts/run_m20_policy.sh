@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Starts the m20_policy_node (ROS container) and Isaac Sim m20_standalone.py --external on the host.
-#   scripts/run_m20_policy.sh --policy /path/to/policy.pt [--policy-device cpu|cuda] [--build] [--no-rviz] [m20_standalone.py args, e.g. --headless --device cpu]
+#   scripts/run_m20_policy.sh --policy /path/to/policy.pt [--policy-device cpu|cuda] [--build] [--no-rviz] [--no-jog] [m20_standalone.py args, e.g. --headless --device cpu]
 # The policy is TorchScript exported by `isaaclab play` (logs/rsl_rl/m20_flat/<run>/exported/policy.pt).
+# The Qt jog panel (m20_jog) starts too and provides /cmd_vel; --no-jog skips it (the sim then publishes a zero /cmd_vel).
 # Stops everything on Ctrl+C.
 set -eo pipefail
 
@@ -14,6 +15,7 @@ export FASTRTPS_DEFAULT_PROFILES_FILE="$project_dir/docker/fastdds_udp.xml"
 
 build=false
 rviz=true
+jog=true
 policy=""
 policy_device=cpu
 sim_args=()
@@ -22,6 +24,7 @@ while (($# > 0)); do
     --policy) policy="${2:?--policy needs a path}"; shift 2 ;;
     --build) build=true; shift ;;
     --no-rviz) rviz=false; shift ;;
+    --no-jog) jog=false; shift ;;
     --policy-device) policy_device="${2:?--policy-device needs cpu or cuda}"; shift 2 ;;
     *) sim_args+=("$1"); shift ;;
   esac
@@ -35,11 +38,11 @@ policy="$(readlink -f "$policy")"
 # the policy directory is mounted read-only at /policies in the container
 export POLICY_DIR="$(dirname "$policy")"
 
-if [[ "$build" == true || ! -f ros2_ws/install/m20_policy_node/share/m20_policy_node/package.xml ]]; then
+if [[ "$build" == true || ! -f ros2_ws/install/m20_policy_node/share/m20_policy_node/package.xml || ! -f ros2_ws/install/m20_jog/share/m20_jog/package.xml ]]; then
   docker compose run --rm ros build
 fi
 
-if [[ "$rviz" == true && -n "${DISPLAY:-}" ]]; then
+if [[ ( "$rviz" == true || "$jog" == true ) && -n "${DISPLAY:-}" ]]; then
   xhost +local:docker >/dev/null 2>&1 || true
 fi
 
@@ -57,6 +60,11 @@ ROS_LAUNCH_ARGS=$'m20_policy_node\nm20_policy.launch.py\npolicy_path:=/policies/
 if [[ "$rviz" == true ]]; then
   docker compose exec -d ros /workspace/docker/entrypoint.sh \
     rviz2 -d /workspace/config/height_map.rviz --ros-args -p use_sim_time:=true
+fi
+
+if [[ "$jog" == true ]]; then
+  docker compose exec -d ros /workspace/docker/entrypoint.sh ros2 run m20_jog m20_jog
+  sim_args+=(--no-cmd-vel)
 fi
 
 docker compose logs -f --no-log-prefix ros &

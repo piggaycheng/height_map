@@ -62,8 +62,6 @@ WHEEL_STIFFNESS, WHEEL_DAMPING, WHEEL_MAX_EFFORT, WHEEL_MAX_VELOCITY = 0.0, 2.0,
 
 SENSOR_WARMUP_S = 3.0
 
-# keyboard control (GUI): Up/Down = forward/back, Left/Right = strafe, N/M (or Q/E) = turn left/right, Space = stop
-KEY_VX, KEY_VY, KEY_WZ = 0.5, 0.2, 0.6
 
 # scripted velocity commands: (seconds, [vx, vy, yaw_rate]); training ranges are vx +-1.5, vy +-0.3, yaw +-1.0
 COMMAND_PHASES = [
@@ -77,6 +75,7 @@ COMMAND_PHASES = [
 parser = argparse.ArgumentParser(description="Run the M20 with an exported locomotion_training policy.")
 parser.add_argument("--policy", type=str, default=None, help="TorchScript policy.pt exported by isaaclab play.")
 parser.add_argument("--external", action="store_true", help="Run inference in the external m20_policy_node via ROS 2.")
+parser.add_argument("--no-cmd-vel", action="store_true", help="With --external: do not publish /cmd_vel (an external publisher such as m20_jog provides it).")
 parser.add_argument("--external-timeout", type=float, default=0.2, help="Seconds to wait for each external action.")
 parser.add_argument("--environment", choices=["office", "grid"], default="office", help="Scene: Isaac Office (structure for LiDAR odometry) or flat grid.")
 parser.add_argument("--office-ground", choices=["mesh", "plane"], default="mesh", help="Office ground collider: floor/stair meshes (can descend stairs) or the invisible collision plane.")
@@ -86,9 +85,9 @@ parser.add_argument("--yaw", type=float, default=0.0, help="Spawn yaw (rad).")
 parser.add_argument("--flat-scan", action="store_true", help="Local --policy mode with the rough policy: observe a flat 187-point height scan.")
 parser.add_argument("--headless", action="store_true", help="Run without the Isaac Sim GUI.")
 parser.add_argument("--test", action="store_true", help="Run the command script once and exit.")
-parser.add_argument("--demo", action="store_true", help="Loop the scripted commands instead of keyboard control.")
+parser.add_argument("--demo", action="store_true", help="Loop the scripted commands instead of a zero command.")
 parser.add_argument("--device", choices=["cpu", "cuda"], default="cuda", help="Simulation device.")
-parser.add_argument("--command", type=float, nargs=3, metavar=("VX", "VY", "WZ"), help="Constant command instead of keyboard/script.")
+parser.add_argument("--command", type=float, nargs=3, metavar=("VX", "VY", "WZ"), help="Constant command instead of zero/script (interactive control: m20_jog publishes /cmd_vel).")
 parser.add_argument("--no-lidar", action="store_true", help="With --external: do not mount the LiDAR/IMU (flat policy, no height map).")
 parser.add_argument("--lidar-offset", type=float, nargs=3, default=[0.2, 0.0, 0.15], metavar=("X", "Y", "Z"), help="LiDAR position in base_link (m).")
 parser.add_argument("--lidar-near-range", type=float, default=1.0, help="LiDAR drops returns closer than this (m); removes hits on the robot body.")
@@ -204,7 +203,7 @@ class ExternalPolicyBridge:
         self._clock_pub = self._node.create_publisher(Clock, "/clock", 1)
         self._imu_pub = self._node.create_publisher(Imu, "/m20/imu", 1)
         self._vel_pub = self._node.create_publisher(TwistStamped, "/m20/base_velocity", 1)
-        self._cmd_pub = self._node.create_publisher(Twist, "/cmd_vel", 1)
+        self._cmd_pub = None if args.no_cmd_vel else self._node.create_publisher(Twist, "/cmd_vel", 1)
         self._joint_pub = self._node.create_publisher(JointState, "/m20/joint_states", 1)
         self._node.create_subscription(JointState, "/m20/joint_commands", self._on_command, 1)
         self._timeout = timeout
@@ -250,7 +249,8 @@ class ExternalPolicyBridge:
         self._clock_pub.publish(clock)
         self._imu_pub.publish(imu)
         self._vel_pub.publish(vel)
-        self._cmd_pub.publish(cmd)
+        if not args.no_cmd_vel:
+            self._cmd_pub.publish(cmd)
         self._joint_pub.publish(joints)  # published last: it triggers inference in the node
 
         deadline = time.monotonic() + self._timeout
@@ -521,44 +521,9 @@ SimulationManager.set_physics_dt(PHYSICS_DT)
 RenderingManager.set_dt(PHYSICS_DT * DECIMATION)
 
 frame_dt = PHYSICS_DT * DECIMATION
-use_keyboard = args.command is None and not (args.test or args.demo or args.headless)
-pressed_keys = set()
-input_interface = keyboard = keyboard_subscription = None
-
-
-def on_keyboard_event(event, *_) -> bool:
-    key = (event.input if isinstance(event.input, str) else event.input.name).upper()
-    if event.type == carb.input.KeyboardEventType.KEY_PRESS:
-        print(f"Key press: {key}", flush=True)
-        pressed_keys.add(key)
-    elif event.type == carb.input.KeyboardEventType.KEY_RELEASE:
-        pressed_keys.discard(key)
-    return True
-
-
-def keyboard_command() -> np.ndarray:
-    def down(*names) -> int:
-        return int(any(n in pressed_keys or input_interface.get_keyboard_value(keyboard, getattr(carb.input.KeyboardInput, n)) > 0 for n in names))
-
-    if down("SPACE"):
-        return np.zeros(3, dtype=np.float32)
-    return np.array(
-        [(down("UP") - down("DOWN")) * KEY_VX, (down("LEFT") - down("RIGHT")) * KEY_VY, (down("N", "Q") - down("M", "E")) * KEY_WZ],
-        dtype=np.float32,
-    )
-
-
-if use_keyboard:
-    import omni.appwindow
-
-    input_interface = carb.input.acquire_input_interface()
-    keyboard = omni.appwindow.get_default_app_window().get_keyboard()
-    keyboard_subscription = input_interface.subscribe_to_keyboard_events(keyboard, on_keyboard_event)
-    print("Keyboard: Up/Down forward/back, Left/Right strafe, N/M (or Q/E) turn left/right, Space stop")
-
 if args.command is not None:
     frame_commands = np.tile(np.asarray(args.command, dtype=np.float32), (int(10.0 / frame_dt), 1))
-elif use_keyboard or args.headless and not args.demo and not args.test:
+elif not (args.demo or args.test):
     frame_commands = np.zeros((int(10.0 / frame_dt), 3), dtype=np.float32)
 else:
     frame_commands = np.concatenate(
@@ -593,19 +558,11 @@ while simulation_app.is_running():
                 break
         if sensor_graph is not None and sensor_graph.is_disabled() and step_count * PHYSICS_DT >= SENSOR_WARMUP_S:
             sensor_graph.set_disabled(False)
-        if use_keyboard:
-            new_command = keyboard_command()
-            if not np.array_equal(new_command, base_command):
-                print(f"Keyboard command vx={new_command[0]:.2f} vy={new_command[1]:.2f} wz={new_command[2]:.2f}", flush=True)
-            base_command = new_command
-        else:
-            base_command = frame_commands[i]
+        base_command = frame_commands[i]
         i += 1
     else:
         reset_needed = True
 
-if input_interface is not None and keyboard_subscription is not None:
-    input_interface.unsubscribe_to_keyboard_events(keyboard, keyboard_subscription)
 timeline.stop()
 SimulationManager.deregister_callback(callback_id)
 if bridge is not None:

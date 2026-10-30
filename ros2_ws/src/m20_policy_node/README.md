@@ -17,7 +17,7 @@ The launch file defaults to `use_sim_time:=true` (follows `/clock`, which `m20_s
 sampled from the elevation_mapping_cupy GridMap (`elevation_map_topic`, layer `height_layer`, map -> `base_frame` via TF).
 `drift_free_height` (default true) takes the base height as the standing height above the median scan terrain, so LiDAR-odometry z drift does not corrupt the scan. `use_height_scan:=false` gives the 60-dim flat obs. Until the map and TF are available the node publishes the default pose.
 
-Controls (GUI): Up/Down forward/back, Left/Right strafe, N/M (or Q/E) turn left/right, Space stop; `--command VX VY WZ`, `--demo` (scripted loop) or `--headless` (zero command) otherwise. RViz starts with the script (`--no-rviz` to skip). The IMU/TF graph starts after 3 s of sim time so FAST-LIO does not initialise on the spawn jolt (it diverged otherwise). The LiDAR sits on the body at z=0.15 (`--lidar-offset`), its mesh is hidden and returns closer than `--lidar-near-range` (default 1.0 m, `nearRangeM`) are dropped so the robot body does not show up in the cloud.
+Controls: the `m20_jog` panel (see below); in the sim itself only `--command VX VY WZ` or `--demo` (scripted loop), otherwise a zero command. RViz starts with the script (`--no-rviz` to skip). The IMU/TF graph starts after 3 s of sim time so FAST-LIO does not initialise on the spawn jolt (it diverged otherwise). The LiDAR sits on the body at z=0.15 (`--lidar-offset`), its mesh is hidden and returns closer than `--lidar-near-range` (default 1.0 m, `nearRangeM`) are dropped so the robot body does not show up in the cloud.
 
 Scene options of `scripts/m20_standalone.py`: `--environment office|grid` (default office); `--office-ground mesh|plane` (default `mesh`: floors and stairs get triangle-mesh colliders so you can descend below z=0; `plane` keeps a collision plane at z=0 plus stair colliders). Debug: `--flat-scan` (local mode) and `FLAT_HEIGHT_SCAN=true scripts/run_m20_policy.sh` (node param `flat_height_scan`) fill the height scan with flat ground to isolate policy vs. map problems.
 The launch file also starts FAST-LIO2 + elevation mapping (`height_map:=false` to skip). The sim side needs the LiDAR/IMU
@@ -34,3 +34,16 @@ scripts/m20_standalone.py --external
 # or everything at once (rebuild with --build after node changes):
 scripts/run_m20_policy.sh --policy /path/to/exported/policy.pt
 ```
+
+## Jog panel (`m20_jog`)
+
+The sim has no keyboard control (it lagged). `ros2_ws/src/m20_jog` is a PyQt5 panel running outside the sim that publishes `/cmd_vel` at 10 Hz (hold buttons or W/S/A/D/Q/E/arrow keys, Space = stop; releasing or losing focus publishes zero). Start the sim with `--no-cmd-vel` so only the panel publishes the command:
+
+```bash
+scripts/m20_standalone.py --external --no-cmd-vel
+ros2 run m20_jog m20_jog   # needs a display; rebuild the docker image once for python3-pyqt5
+```
+
+`scripts/run_m20_policy.sh` starts the jog panel automatically (and passes `--no-cmd-vel` to the sim); use `--no-jog` to skip it (the sim then publishes a zero `/cmd_vel`).
+
+Panel only (e.g. sim started separately with `--no-cmd-vel`): `scripts/run_m20_jog.sh [--build]`.
