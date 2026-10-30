@@ -6,7 +6,7 @@ External ROS 2 inference node for the M20 policy trained in `locomotion_training
 
 | Direction | Topic | Type | Content |
 |-----------|-------|------|---------|
-| in | `/m20/joint_states` | `sensor_msgs/JointState` | position/velocity of the 16 joints by name; **each message triggers one inference** |
+| in | `/m20/joint_states` | `sensor_msgs/JointState` | position/velocity of the 16 joints by name; the latest message is used by the 50 Hz inference timer (`control_rate_hz:=0`: each message triggers one inference) |
 | in | `/m20/imu` | `sensor_msgs/Imu` | orientation (wxyz base→world) and angular velocity in the base frame |
 | in | `/m20/base_velocity` | `geometry_msgs/TwistStamped` | linear velocity in the base frame |
 | in | `/cmd_vel` | `geometry_msgs/Twist` | vx, vy, yaw rate (treated as zero after `command_timeout_s`) |
@@ -24,7 +24,9 @@ The launch file also starts FAST-LIO2 + elevation mapping (`height_map:=false` t
 mounted by `m20_standalone.py --external` (`--no-lidar` to disable). LiDAR odometry degrades on the featureless default
 grid ground; use a scene with structure for long runs.
 
-Publish IMU, base velocity and command before `joint_states`. Wheel contact is not measured (assumed 1.0).
+Inference is timer-driven (`control_rate_hz`, default 50 Hz, node clock) on the latest joint states / IMU / base velocity; if any is older than `state_timeout_s` (0.1 s) that tick is skipped. `m20_standalone.py --external` publishes the state at every physics step (200 Hz) like real sensor streams, applies the newest command once per control period (50 Hz), waiting up to `--external-timeout` for one if none arrived. `control_rate_hz:=0` (inference per `joint_states` message) would run the policy at 200 Hz there, so keep the timer. Wheel contact is not measured (assumed 1.0).
+
+QoS: `joint_states`, `imu`, `base_velocity` (subscribers) and `joint_commands` (publisher) use depth 1 and BEST_EFFORT by default (`best_effort_qos`), compatible with sensor-data publishers; `m20_standalone.py --external` uses the same QoS. Set `best_effort_qos:=false` for reliable endpoints (a reliable subscriber cannot receive from a best-effort publisher, so both sides must agree). `/cmd_vel` and the elevation map keep the default reliable QoS.
 
 ```bash
 docker compose run --rm ros build

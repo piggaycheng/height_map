@@ -3,7 +3,8 @@
 
 Subscribes (all topic names are parameters):
   /m20/joint_states    sensor_msgs/JointState   position + velocity of the 16 M20 joints, by name.
-                                                 Every message triggers one inference, so publish it last.
+                                                 Inference runs on a timer (control_rate_hz, default 50) with the latest
+                                                 state; with control_rate_hz=0 every message triggers one inference.
   /m20/imu             sensor_msgs/Imu          orientation (base -> world) and angular velocity in the base frame
   /m20/base_velocity   geometry_msgs/TwistStamped  base linear velocity in the base frame
   /cmd_vel             geometry_msgs/Twist      velocity command (vx, vy, yaw rate)
@@ -12,7 +13,7 @@ Subscribes (all topic names are parameters):
 Publishes:
   /m20/joint_commands  sensor_msgs/JointState   name = 16 joints; position = leg position targets (rad),
                                                  velocity = wheel velocity targets (rad/s); NaN where unused.
-                                                 header.stamp is copied from the joint_states that triggered it.
+                                                 header.stamp is copied from the joint_states used.
 """
 
 import numpy as np
@@ -20,6 +21,7 @@ import rclpy
 from geometry_msgs.msg import Twist, TwistStamped
 from grid_map_msgs.msg import GridMap
 from rclpy.node import Node
+from rclpy.qos import QoSProfile, ReliabilityPolicy
 from sensor_msgs.msg import Imu, JointState
 from tf2_ros import Buffer, TransformListener
 
@@ -36,6 +38,12 @@ class M20PolicyNode(Node):
         self.declare_parameter("base_velocity_topic", "/m20/base_velocity")
         self.declare_parameter("cmd_vel_topic", "/cmd_vel")
         self.declare_parameter("joint_commands_topic", "/m20/joint_commands")
+        # best effort (depth 1) for the state inputs and the command output, as sensor drivers use; false = reliable
+        self.declare_parameter("best_effort_qos", True)
+        # inference runs on a timer at this rate using the latest state; 0 = one inference per joint_states message
+        self.declare_parameter("control_rate_hz", 50.0)
+        # timer mode: joint states / IMU / base velocity older than this (node clock) skip the inference (0 disables)
+        self.declare_parameter("state_timeout_s", 0.1)
         # a command older than this is treated as zero (0 disables the check)
         self.declare_parameter("command_timeout_s", 0.5)
         # no contact sensing on the robot yet: 1.0 assumes every wheel touches the ground
@@ -75,15 +83,26 @@ class M20PolicyNode(Node):
         self._command_time = None
         self._warned_missing = False
         self._last_stamp_ns = None
+        self._joint_msg = None
+        self._joint_time = self._imu_time = self._vel_time = None
+        rate = float(self.get_parameter("control_rate_hz").value)
+        self._control_period = 1.0 / rate if rate > 0.0 else 0.0
+        self._state_timeout = float(self.get_parameter("state_timeout_s").value)
 
         param = self.get_parameter
-        self._pub = self.create_publisher(JointState, param("joint_commands_topic").value, 1)
-        self.create_subscription(Imu, param("imu_topic").value, self._on_imu, 1)
-        self.create_subscription(TwistStamped, param("base_velocity_topic").value, self._on_base_velocity, 1)
+        qos = QoSProfile(
+            depth=1,
+            reliability=ReliabilityPolicy.BEST_EFFORT if param("best_effort_qos").value else ReliabilityPolicy.RELIABLE,
+        )
+        self._pub = self.create_publisher(JointState, param("joint_commands_topic").value, qos)
+        self.create_subscription(Imu, param("imu_topic").value, self._on_imu, qos)
+        self.create_subscription(TwistStamped, param("base_velocity_topic").value, self._on_base_velocity, qos)
         self.create_subscription(Twist, param("cmd_vel_topic").value, self._on_cmd_vel, 1)
-        self.create_subscription(JointState, param("joint_states_topic").value, self._on_joint_states, 1)
+        self.create_subscription(JointState, param("joint_states_topic").value, self._on_joint_states, qos)
         if self._use_height_scan:
             self.create_subscription(GridMap, param("elevation_map_topic").value, self._on_elevation_map, 1)
+        if self._control_period > 0.0:
+            self.create_timer(self._control_period, self._on_timer)  # node clock (/clock with use_sim_time)
         self.get_logger().info(f"Loaded policy {policy_path}")
 
     def _on_imu(self, msg: Imu) -> None:
@@ -91,10 +110,12 @@ class M20PolicyNode(Node):
         self._orientation_wxyz = np.array([q.w, q.x, q.y, q.z])
         w = msg.angular_velocity
         self._ang_vel = np.array([w.x, w.y, w.z])
+        self._imu_time = self.get_clock().now()
 
     def _on_base_velocity(self, msg: TwistStamped) -> None:
         v = msg.twist.linear
         self._lin_vel = np.array([v.x, v.y, v.z])
+        self._vel_time = self.get_clock().now()
 
     def _on_cmd_vel(self, msg: Twist) -> None:
         self._command = np.array([msg.linear.x, msg.linear.y, msg.angular.z])
@@ -149,6 +170,26 @@ class M20PolicyNode(Node):
         return self._command if 0.0 <= age <= self._command_timeout else np.zeros(3)
 
     def _on_joint_states(self, msg: JointState) -> None:
+        self._joint_msg = msg
+        self._joint_time = self.get_clock().now()
+        if self._control_period <= 0.0:
+            self._infer(msg)
+
+    def _on_timer(self) -> None:
+        msg = self._joint_msg
+        if msg is None:
+            self.get_logger().warn("Waiting for joint states", throttle_duration_sec=5.0)
+            return
+        if self._state_timeout > 0.0:
+            now = self.get_clock().now()
+            for name, received in (("joint states", self._joint_time), ("IMU", self._imu_time), ("base velocity", self._vel_time)):
+                age = float("inf") if received is None else (now - received).nanoseconds * 1e-9
+                if not 0.0 <= age <= self._state_timeout:
+                    self.get_logger().warn(f"Stale {name} ({age:.2f} s old); skipping inference", throttle_duration_sec=2.0)
+                    return
+        self._infer(msg)
+
+    def _infer(self, msg: JointState) -> None:
         if self._orientation_wxyz is None or self._lin_vel is None:
             if not self._warned_missing:
                 self.get_logger().warn("Waiting for IMU and base velocity before running the policy")

@@ -12,8 +12,9 @@ The policy is the TorchScript file exported by `isaaclab play` (logs/rsl_rl/m20_
 Without --policy the robot only holds its default pose (zero actions), which is useful as a smoke test.
 
 With --external the policy runs in the ROS 2 node `m20_policy_node` instead: each control step this script
-publishes /clock (simulation time), /m20/imu, /m20/base_velocity, /cmd_vel and finally /m20/joint_states, then waits (up to
---external-timeout) for the matching /m20/joint_commands and applies it. See ros2_ws/src/m20_policy_node.
+publishes /clock (simulation time), /m20/imu, /m20/base_velocity, /cmd_vel and /m20/joint_states at every physics step (like
+real sensor streams) and applies the newest /m20/joint_commands once per control period (DECIMATION physics steps), waiting up to
+--external-timeout for a new command if none arrived. See ros2_ws/src/m20_policy_node.
 The rough-terrain policy (Velocity-Rough-M20, obs 247 incl. a 187-point height scan) also needs the terrain map: with
 --external an RTX LiDAR + IMU are mounted on base_link and published like standalone.py (/isaac/lidar_points, /isaac/imu,
 /tf_static body -> base_link -> lidar_link/imu_link) for FAST-LIO2 + elevation_mapping_cupy; the node samples the scan from
@@ -194,6 +195,7 @@ class ExternalPolicyBridge:
         import rclpy
         from geometry_msgs.msg import Twist, TwistStamped
         from rosgraph_msgs.msg import Clock
+        from rclpy.qos import QoSProfile, ReliabilityPolicy
         from sensor_msgs.msg import Imu, JointState
 
         self._rclpy, self._Twist, self._TwistStamped = rclpy, Twist, TwistStamped
@@ -201,18 +203,21 @@ class ExternalPolicyBridge:
         rclpy.init()
         self._node = rclpy.create_node("m20_isaac_sim")
         self._clock_pub = self._node.create_publisher(Clock, "/clock", 1)
-        self._imu_pub = self._node.create_publisher(Imu, "/m20/imu", 1)
-        self._vel_pub = self._node.create_publisher(TwistStamped, "/m20/base_velocity", 1)
+        # best effort like the real robot's sensor topics; matches the policy node's default best_effort_qos
+        qos = QoSProfile(depth=1, reliability=ReliabilityPolicy.BEST_EFFORT)
+        self._imu_pub = self._node.create_publisher(Imu, "/m20/imu", qos)
+        self._vel_pub = self._node.create_publisher(TwistStamped, "/m20/base_velocity", qos)
         self._cmd_pub = None if args.no_cmd_vel else self._node.create_publisher(Twist, "/cmd_vel", 1)
-        self._joint_pub = self._node.create_publisher(JointState, "/m20/joint_states", 1)
-        self._node.create_subscription(JointState, "/m20/joint_commands", self._on_command, 1)
+        self._joint_pub = self._node.create_publisher(JointState, "/m20/joint_states", qos)
+        self._node.create_subscription(JointState, "/m20/joint_commands", self._on_command, qos)
         self._timeout = timeout
-        self._pending_stamp = None
         self._received = None
+        self._fresh = False  # a command arrived that has not been applied yet
         self.timeouts = 0
 
     def _on_command(self, msg) -> None:
         self._received = msg
+        self._fresh = True
 
     def close(self) -> None:
         self._node.destroy_node()
@@ -245,24 +250,28 @@ class ExternalPolicyBridge:
         joints.position = [float(v) for v in robot.get_dof_positions().numpy().reshape(-1)]
         joints.velocity = [float(v) for v in robot.get_dof_velocities().numpy().reshape(-1)]
 
-        self._received = None
+        if step_count == 0:  # (re)start: drop commands from the previous run
+            self._fresh = False
         self._clock_pub.publish(clock)
         self._imu_pub.publish(imu)
         self._vel_pub.publish(vel)
         if not args.no_cmd_vel:
             self._cmd_pub.publish(cmd)
-        self._joint_pub.publish(joints)  # published last: it triggers inference in the node
+        self._joint_pub.publish(joints)
 
+        # the state is published every physics step like a real sensor stream; commands are only collected here and the
+        # newest one is applied once per control period
+        self._rclpy.spin_once(self._node, timeout_sec=0.0)
+        if step_count % DECIMATION != 0:
+            return
+        # do not outrun the node: wait for a command that arrived since the last control period
         deadline = time.monotonic() + self._timeout
-        while time.monotonic() < deadline:
+        while not self._fresh and time.monotonic() < deadline:
             self._rclpy.spin_once(self._node, timeout_sec=0.005)
-            received = self._received
-            if received is not None and (received.header.stamp.sec, received.header.stamp.nanosec) == (
-                stamp.sec,
-                stamp.nanosec,
-            ):
-                self._apply(received)
-                return
+        if self._fresh:
+            self._fresh = False
+            self._apply(self._received)
+            return
         self.timeouts += 1
         if self.timeouts in (1, 10) or self.timeouts % 100 == 0:
             carb.log_warn(f"m20_standalone: no action from m20_policy_node ({self.timeouts} timeouts); holding last targets")
@@ -301,7 +310,7 @@ def on_physics_step(step_size: float, context: object) -> None:
             reset_needed = False
             needs_init = True
         else:
-            if step_count % DECIMATION == 0 and bridge is not None:
+            if bridge is not None:
                 bridge.step()
             elif step_count % DECIMATION == 0 and policy is not None:
                 obs = torch.from_numpy(build_observation()).unsqueeze(0)

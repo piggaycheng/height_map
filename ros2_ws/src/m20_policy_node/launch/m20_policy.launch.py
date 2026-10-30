@@ -33,6 +33,16 @@ def generate_launch_description():
                 default_value="true",
                 description="Also start FAST-LIO2 + elevation_mapping_cupy (set false if they run elsewhere)",
             ),
+            DeclareLaunchArgument(
+                "control_rate_hz",
+                default_value="50.0",
+                description="Inference rate (timer on the latest state); 0 = one inference per joint_states message",
+            ),
+            DeclareLaunchArgument(
+                "best_effort_qos",
+                default_value="true",
+                description="Best effort QoS for joint_states/imu/base_velocity/joint_commands (false = reliable)",
+            ),
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(height_map_launch),
                 condition=IfCondition(LaunchConfiguration("height_map")),
@@ -49,6 +59,8 @@ def generate_launch_description():
                         "use_sim_time": LaunchConfiguration("use_sim_time"),
                         "use_height_scan": LaunchConfiguration("use_height_scan"),
                         "flat_height_scan": LaunchConfiguration("flat_height_scan"),
+                        "control_rate_hz": LaunchConfiguration("control_rate_hz"),
+                        "best_effort_qos": LaunchConfiguration("best_effort_qos"),
                     }
                 ],
             ),
