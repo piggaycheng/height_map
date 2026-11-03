@@ -44,6 +44,9 @@ VARIANTS = {"Physics": "PhysX", "Sensor": "None", "Robot": "Robot"}
 PHYSICS_DT = 0.005
 DECIMATION = 4
 STANDING_HEIGHT = 0.49
+CAMERA_BACK_M = 2.5
+CAMERA_UP_M = 1.5
+CAMERA_TARGET_UP_M = 0.3
 LEG_JOINTS = re.compile(r".*_(hipx|hipy|knee)_joint")
 WHEEL_JOINTS = re.compile(r".*_wheel_joint")
 DEFAULT_POS = [
@@ -545,6 +548,26 @@ if args.external:
 
 callback_id = SimulationManager.register_callback(on_physics_step, IsaacEvents.POST_PHYSICS_STEP)
 
+def follow_robot_camera() -> None:
+    """Keep the viewport camera behind and above the base, rotating with its heading."""
+    if args.headless:
+        return
+    from omni.kit.viewport.utility import get_active_viewport_camera_path
+    from omni.kit.viewport.utility.camera_state import ViewportCameraState
+    from pxr import Gf
+
+    pos, quat = robot.get_world_poses()
+    pos = pos.numpy().reshape(-1)[:3]
+    w, x, y, z = quat.numpy().reshape(-1)[:4]
+    yaw = math.atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z))
+    forward = np.array([math.cos(yaw), math.sin(yaw), 0.0])
+    eye = pos - CAMERA_BACK_M * forward + np.array([0.0, 0.0, CAMERA_UP_M])
+    target = pos + np.array([0.0, 0.0, CAMERA_TARGET_UP_M])
+    camera_state = ViewportCameraState(str(get_active_viewport_camera_path()))
+    camera_state.set_position_world(Gf.Vec3d(*map(float, eye)), True)
+    camera_state.set_target_world(Gf.Vec3d(*map(float, target)), True)
+
+
 timeline = omni.timeline.get_timeline_interface()
 timeline.play()
 simulation_app.update()
@@ -566,6 +589,7 @@ while simulation_app.is_running():
                 break
         if sensor_graph is not None and sensor_graph.is_disabled() and step_count * PHYSICS_DT >= SENSOR_WARMUP_S:
             sensor_graph.set_disabled(False)
+        follow_robot_camera()
         base_command = frame_commands[i]
         i += 1
     else:
