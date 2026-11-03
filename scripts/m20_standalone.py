@@ -3,10 +3,10 @@
 Modeled on standalone_examples/api/isaacsim.robot.policy.examples/go2_standalone.py, but the M20
 (wheel-legged) is not a bundled policy spec, so observations and actions are built here to match
 my_locomotion_training "Velocity-Flat-M20":
-  obs (60) = base lin vel(3) | base ang vel(3) | projected gravity(3) | command(3) | leg pos rel(12)
-             | leg vel rel *0.05 (12) | last action(16) | wheel vel *0.05 (4) | wheel contact(4)
+  obs (56) = base lin vel(3) | base ang vel(3) | projected gravity(3) | command(3) | leg pos rel(12)
+             | leg vel rel *0.05 (12) | last action(16) | wheel vel *0.05 (4)
   act (16) = 12 leg position offsets (*0.25 rad, added to default pose, clipped +-1.5)
-             | 4 wheel velocities (*20 rad/s, clipped +-60)
+             | 4 wheel velocities (*10 rad/s, clipped +-60)
 The policy is the TorchScript file exported by `isaaclab play` (logs/rsl_rl/m20_flat/<run>/exported/policy.pt).
 Without --policy the robot only holds its default pose (zero actions), which is useful as a smoke test.
 
@@ -14,7 +14,7 @@ With --external the policy runs in the ROS 2 node `m20_policy_node` instead: eac
 publishes /clock (simulation time), /m20/imu, /m20/base_velocity, /cmd_vel and /m20/joint_states at every physics step (like
 real sensor streams) and applies the newest /m20/joint_commands once per control period (DECIMATION physics steps), waiting up to
 --external-timeout for a new command if none arrived. See ros2_ws/src/m20_policy_node.
-The rough-terrain policy (Velocity-Rough-M20, obs 247 incl. a 187-point height scan) also needs the terrain map: with
+The rough-terrain policy (Velocity-Rough-M20, obs 243 incl. a 187-point height scan) also needs the terrain map: with
 --external an RTX LiDAR + IMU are mounted on base_link and published like standalone.py (/isaac/lidar_points, /isaac/imu,
 /tf_static body -> base_link -> lidar_link/imu_link) for FAST-LIO2 + elevation_mapping_cupy; the node samples the scan from
 that map. Pass --no-lidar for the flat policy.
@@ -58,7 +58,7 @@ DEFAULT_POS = [
 ]
 LEG_ACTION_SCALE = 0.25
 LEG_TARGET_LIMIT = 1.5
-WHEEL_ACTION_SCALE = 20.0
+WHEEL_ACTION_SCALE = 10.0
 WHEEL_TARGET_LIMIT = 60.0
 LEG_STIFFNESS, LEG_DAMPING, LEG_MAX_EFFORT, LEG_MAX_VELOCITY = 80.0, 2.0, 76.4, 22.4
 WHEEL_STIFFNESS, WHEEL_DAMPING, WHEEL_MAX_EFFORT, WHEEL_MAX_VELOCITY = 0.0, 2.0, 21.6, 79.3
@@ -170,7 +170,6 @@ def build_observation() -> np.ndarray:
             last_action,
             *([np.full(187, STANDING_HEIGHT - 0.5)] if args.flat_scan else []),
             dof_vel[wheel_idx] * 0.05,
-            np.ones(len(wheel_idx)),  # wheel contact flags: assumes flat ground contact
         ]
     ).astype(np.float32)
 

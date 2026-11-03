@@ -46,8 +46,6 @@ class M20PolicyNode(Node):
         self.declare_parameter("state_timeout_s", 0.1)
         # a command older than this is treated as zero (0 disables the check)
         self.declare_parameter("command_timeout_s", 0.5)
-        # no contact sensing on the robot yet: 1.0 assumes every wheel touches the ground
-        self.declare_parameter("assume_wheel_contact", True)
         # the rough-terrain policy observes a height scan sampled from an elevation_mapping_cupy map
         self.declare_parameter("use_height_scan", True)
         self.declare_parameter("elevation_map_topic", "/elevation_mapping_node/elevation_map_filter")
@@ -63,7 +61,6 @@ class M20PolicyNode(Node):
             raise RuntimeError("Parameter 'policy_path' (TorchScript policy.pt) is required")
         self._policy = m20.M20Policy(policy_path, self.get_parameter("device").value)
         self._command_timeout = float(self.get_parameter("command_timeout_s").value)
-        self._wheel_contact = np.full(4, 1.0 if self.get_parameter("assume_wheel_contact").value else 0.0)
 
         self._use_height_scan = bool(self.get_parameter("use_height_scan").value)
         self._height_layer = self.get_parameter("height_layer").value
@@ -226,7 +223,6 @@ class M20PolicyNode(Node):
             vel[:12],
             vel[12:],
             self._policy.last_action,
-            self._wheel_contact,
             height_scan,
         )
         if not np.all(np.isfinite(obs)):

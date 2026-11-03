@@ -1,11 +1,11 @@
 """ROS-independent M20 policy I/O, matching my_locomotion_training "Velocity-Rough-M20" (and Flat without height scan).
 
-obs (247) = base lin vel(3) | base ang vel(3) | projected gravity(3) | command(3) | leg pos rel(12)
-            | leg vel rel * 0.05 (12) | last action(16) | height scan(187) | wheel vel * 0.05 (4) | wheel contact(4)
-            The flat policy has the same layout without the height scan (60 values).
+obs (243) = base lin vel(3) | base ang vel(3) | projected gravity(3) | command(3) | leg pos rel(12)
+            | leg vel rel * 0.05 (12) | last action(16) | height scan(187) | wheel vel * 0.05 (4)
+            The flat policy has the same layout without the height scan (56 values).
 height scan = clip(base_z - ground_z - 0.5, -1, 1) on a 1.6 x 1.0 m grid (0.1 m, x fastest) aligned with the base yaw.
 action (16) = 12 leg position offsets (* 0.25 rad, added to the default pose, clipped +-1.5)
-              | 4 wheel velocities (* 20 rad/s, clipped +-60)
+              | 4 wheel velocities (* 10 rad/s, clipped +-60)
 Leg order is hipx, hipy, knee, each fl, fr, hl, hr; wheels are fl, fr, hl, hr.
 """
 
@@ -25,12 +25,12 @@ SCAN_SIZE = len(SCAN_POINTS)
 SCAN_OFFSET = 0.5
 SCAN_CLIP = 1.0
 STANDING_HEIGHT = 0.49
-FLAT_OBS_SIZE = 60
+FLAT_OBS_SIZE = 56
 OBS_SIZE = FLAT_OBS_SIZE + SCAN_SIZE
 ACTION_SIZE = 16
 LEG_ACTION_SCALE = 0.25
 LEG_TARGET_LIMIT = 1.5
-WHEEL_ACTION_SCALE = 20.0
+WHEEL_ACTION_SCALE = 10.0
 WHEEL_TARGET_LIMIT = 60.0
 VELOCITY_OBS_SCALE = 0.05
 
@@ -95,10 +95,9 @@ def build_observation(
     leg_vel: np.ndarray,
     wheel_vel: np.ndarray,
     last_action: np.ndarray,
-    wheel_contact: np.ndarray,
     height_scan: np.ndarray | None = None,
 ) -> np.ndarray:
-    """Assemble the observation (247 values, or 60 without ``height_scan``); base velocities must be in the base frame."""
+    """Assemble the observation (243 values, or 56 without ``height_scan``); base velocities must be in the base frame."""
     gravity = quat_rotate_inverse(np.asarray(orientation_wxyz, dtype=np.float64), np.array([0.0, 0.0, -1.0]))
     obs = np.concatenate(
         [
@@ -111,7 +110,6 @@ def build_observation(
             last_action,
             [] if height_scan is None else height_scan,
             wheel_vel * VELOCITY_OBS_SCALE,
-            wheel_contact,
         ]
     ).astype(np.float32)
     expected = FLAT_OBS_SIZE if height_scan is None else OBS_SIZE
