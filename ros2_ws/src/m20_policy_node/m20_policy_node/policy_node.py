@@ -53,7 +53,7 @@ class M20PolicyNode(Node):
         self.declare_parameter("base_frame", "base_link")
         # a map older than this (node clock) is not used; the robot then waits instead of walking blind
         self.declare_parameter("map_timeout_s", 2.0)
-        self.declare_parameter("drift_free_height", True)
+        self.declare_parameter("drift_free_height", False)
         self.declare_parameter("flat_height_scan", False)  # debug: ignore the map and observe flat ground
 
         policy_path = self.get_parameter("policy_path").value
