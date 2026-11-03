@@ -76,6 +76,6 @@ sim_ld_path="$(printf '%s' "${LD_LIBRARY_PATH:-}" | tr ':' '\n' | { grep -v '^/o
 env -u PYTHONPATH -u AMENT_PREFIX_PATH -u COLCON_PREFIX_PATH -u CMAKE_PREFIX_PATH -u ROS_VERSION -u ROS_PYTHON_VERSION \
   ROS_DISTRO=jazzy RMW_IMPLEMENTATION=rmw_fastrtps_cpp \
   LD_LIBRARY_PATH="$sim_ld_path:$isaacsim_dir/exts/isaacsim.ros2.core/jazzy/lib" \
-  "$project_dir/scripts/m20_standalone.py" --external "${sim_args[@]}" &
+  "$isaacsim_dir/python.sh" "$project_dir/scripts/m20_standalone.py" --external "${sim_args[@]}" &
 sim_pid=$!
 wait "$sim_pid"

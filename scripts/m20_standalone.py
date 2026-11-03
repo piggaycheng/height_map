@@ -1,4 +1,3 @@
-#!/home/yu/isaacsim-6.2.0/python.sh
 """Isaac Sim 6.2 standalone: Deep Robotics M20 driven by a policy trained in locomotion_training.
 
 Modeled on standalone_examples/api/isaacsim.robot.policy.examples/go2_standalone.py, but the M20

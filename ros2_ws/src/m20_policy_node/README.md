@@ -32,7 +32,7 @@ QoS: `joint_states`, `imu`, `base_velocity` (subscribers) and `joint_commands` (
 docker compose run --rm ros build
 ros2 launch m20_policy_node m20_policy.launch.py policy_path:=/workspace/path/to/policy.pt  # use_sim_time:=false for hardware
 # Isaac Sim side (host), using the ROS 2 DDS settings of run_height_map.sh:
-scripts/m20_standalone.py --external
+"${ISAACSIM_DIR:-$HOME/isaacsim-6.2.0}/python.sh" scripts/m20_standalone.py --external
 # or everything at once (rebuild with --build after node changes):
 scripts/run_m20_policy.sh --policy /path/to/exported/policy.pt
 ```
@@ -42,7 +42,7 @@ scripts/run_m20_policy.sh --policy /path/to/exported/policy.pt
 The sim has no keyboard control (it lagged). `ros2_ws/src/m20_jog` is a PyQt5 panel running outside the sim that publishes `/cmd_vel` at 10 Hz (hold buttons or W/S/A/D/Q/E/arrow keys, Space = stop; releasing or losing focus publishes zero). Start the sim with `--no-cmd-vel` so only the panel publishes the command:
 
 ```bash
-scripts/m20_standalone.py --external --no-cmd-vel
+"${ISAACSIM_DIR:-$HOME/isaacsim-6.2.0}/python.sh" scripts/m20_standalone.py --external --no-cmd-vel
 ros2 run m20_jog m20_jog   # needs a display; rebuild the docker image once for python3-pyqt5
 ```
 
