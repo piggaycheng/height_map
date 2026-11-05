@@ -22,6 +22,14 @@ set -u
 
 # The Livox driver ships ROS 1 and ROS 2 manifests; use the ROS 2 one temporarily.
 cleanup() {
+  local livox_share="$workspace_dir/install/livox_ros_driver2/share/livox_ros_driver2"
+  if [[ -L "$livox_share/package.xml" ]]; then
+    cp --remove-destination "$livox_driver/package_ROS2.xml" "$livox_share/package.xml"
+  fi
+  if [[ -d "$livox_share/launch" ]]; then
+    rm -rf "$livox_share/launch"
+    cp -r "$livox_driver/launch_ROS2" "$livox_share/launch"
+  fi
   rm -rf "$livox_driver/launch"
   rm -f "$livox_driver/package.xml"
 }
@@ -37,6 +45,7 @@ rm -rf "$workspace_dir/build/livox_ros_driver2" "$workspace_dir/build/interface"
 
 cd "$workspace_dir"
 colcon build \
+  --symlink-install \
   --packages-up-to fastlio2 isaac_fastlio_adapter elevation_mapping_cupy m20_policy_node m20_jog \
   "$@" \
   --cmake-args \

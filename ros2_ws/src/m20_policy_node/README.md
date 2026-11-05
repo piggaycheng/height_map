@@ -15,7 +15,7 @@ External ROS 2 inference node for the M20 policy trained in `locomotion_training
 The launch file defaults to `use_sim_time:=true` (follows `/clock`, which `m20_standalone.py --external` publishes); pass `use_sim_time:=false` on the real robot.
 **Rough policy (243-dim obs):** the 17x11 height scan (1.6 x 1.0 m, 0.1 m, yaw-aligned, `base_z - ground_z - 0.5` clipped to +-1) is
 sampled from the elevation_mapping_cupy GridMap (`elevation_map_topic`, layer `height_layer`, map -> `base_frame` via TF).
-`drift_free_height` (default false) takes the base height as the standing height above the median scan terrain, so LiDAR-odometry z drift does not corrupt the scan. `use_height_scan:=false` gives the 56-dim flat obs. Until the map and TF are available the node publishes the default pose.
+`drift_free_height` (default true) takes the base height as the standing height above the median scan terrain, so LiDAR-odometry z drift does not corrupt the scan. `use_height_scan:=false` gives the 56-dim flat obs. Until the map and TF are available the node publishes the default pose.
 
 Controls: the `m20_jog` panel (see below); in the sim itself only `--command VX VY WZ` or `--demo` (scripted loop), otherwise a zero command. RViz starts with the script (`--no-rviz` to skip). The IMU/TF graph starts after 3 s of sim time so FAST-LIO does not initialise on the spawn jolt (it diverged otherwise). The LiDAR sits on the body at z=0.15 (`--lidar-offset`), its mesh is hidden and returns closer than `--lidar-near-range` (default 1.0 m, `nearRangeM`) are dropped so the robot body does not show up in the cloud.
 

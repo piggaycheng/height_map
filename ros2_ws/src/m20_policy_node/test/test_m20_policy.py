@@ -26,8 +26,8 @@ def test_gravity_follows_base_tilt():
 
 
 def test_action_targets_scaled_and_clipped():
-    leg, wheel = m20.action_to_targets(np.concatenate([np.full(12, 100.0), [1, -1, 100, -100]]))
-    np.testing.assert_allclose(leg, 1.5)
+    leg, wheel = m20.action_to_targets(np.concatenate([np.full(12, 4.0), [1, -1, 100, -100]]))
+    np.testing.assert_allclose(leg, m20.DEFAULT_LEG_POS + 1.0)
     np.testing.assert_allclose(wheel, [10, -10, 60, -60])
     leg, _ = m20.action_to_targets(np.zeros(16))
     np.testing.assert_allclose(leg, m20.DEFAULT_LEG_POS)

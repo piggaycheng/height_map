@@ -4,7 +4,7 @@ obs (243) = base lin vel(3) | base ang vel(3) | projected gravity(3) | command(3
             | leg vel rel * 0.05 (12) | last action(16) | height scan(187) | wheel vel * 0.05 (4)
             The flat policy has the same layout without the height scan (56 values).
 height scan = clip(base_z - ground_z - 0.5, -1, 1) on a 1.6 x 1.0 m grid (0.1 m, x fastest) aligned with the base yaw.
-action (16) = 12 leg position offsets (* 0.25 rad, added to the default pose, clipped +-1.5)
+action (16) = 12 leg position offsets (* 0.25 rad, added to the default pose)
               | 4 wheel velocities (* 10 rad/s, clipped +-60)
 Leg order is hipx, hipy, knee, each fl, fr, hl, hr; wheels are fl, fr, hl, hr.
 """
@@ -29,7 +29,6 @@ FLAT_OBS_SIZE = 56
 OBS_SIZE = FLAT_OBS_SIZE + SCAN_SIZE
 ACTION_SIZE = 16
 LEG_ACTION_SCALE = 0.25
-LEG_TARGET_LIMIT = 1.5
 WHEEL_ACTION_SCALE = 10.0
 WHEEL_TARGET_LIMIT = 60.0
 VELOCITY_OBS_SCALE = 0.05
@@ -120,7 +119,7 @@ def build_observation(
 
 def action_to_targets(action: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """Map a raw policy action to leg position targets (rad) and wheel velocity targets (rad/s)."""
-    leg_targets = np.clip(DEFAULT_LEG_POS + LEG_ACTION_SCALE * action[:12], -LEG_TARGET_LIMIT, LEG_TARGET_LIMIT)
+    leg_targets = DEFAULT_LEG_POS + LEG_ACTION_SCALE * action[:12]
     wheel_targets = np.clip(WHEEL_ACTION_SCALE * action[12:], -WHEEL_TARGET_LIMIT, WHEEL_TARGET_LIMIT)
     return leg_targets.astype(np.float32), wheel_targets.astype(np.float32)
 
