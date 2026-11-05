@@ -27,6 +27,7 @@ RUN curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key \
       python3-numpy \
       python3-opencv \
       python3-pip \
+      python3-pyqt5 \
       python3-pytest \
       python3-ruamel.yaml \
       python3-scipy \
